@@ -186,7 +186,9 @@ jobs:
 
   macos-universal:
     name: macOS Universal
-    runs-on: macos-14
+    # macos-14 is deprecated and its arm64 pool queues for a long time. Build
+    # the universal (arm64 + x86_64) bundle on the supported Intel image.
+    runs-on: macos-15-intel
     timeout-minutes: 45
 
     steps:
