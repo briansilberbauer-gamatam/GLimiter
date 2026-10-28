@@ -102,13 +102,13 @@ ParamSlider::ParamSlider (juce::AudioProcessorValueTreeState& state,
 
     nameLabel.setText (displayName, juce::dontSendNotification);
     nameLabel.setJustificationType (juce::Justification::centred);
-    nameLabel.setFont (font (7.6f, FontWeight::semibold, 0.14f));
+    nameLabel.setFont (font (8.2f, FontWeight::semibold, 0.16f));
     nameLabel.setColour (juce::Label::textColourId, textSecondary);
     nameLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (nameLabel);
 
     valueLabel.setJustificationType (juce::Justification::centred);
-    valueLabel.setFont (font (8.4f, FontWeight::semibold, 0.01f));
+    valueLabel.setFont (font (9.0f, FontWeight::semibold, 0.02f));
     valueLabel.setColour (juce::Label::textColourId, textPrimary.withAlpha (0.95f));
     valueLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (valueLabel);
@@ -140,8 +140,8 @@ ParamSlider::ParamSlider (juce::AudioProcessorValueTreeState& state,
 void ParamSlider::resized()
 {
     auto area = getLocalBounds();
-    nameLabel.setBounds (area.removeFromTop (11));
-    valueLabel.setBounds (area.removeFromBottom (13));
+    nameLabel.setBounds (area.removeFromTop (22));
+    valueLabel.setBounds (area.removeFromBottom (22));
     slider.setBounds (area.reduced (2, 1));
 }
 
@@ -504,30 +504,35 @@ StereoMeter::StereoMeter()
     setTooltip ("Output level - click to reset the clip indicator");
 }
 
-float StereoMeter::levelToNormalised (float level)
+float StereoMeter::gainToDb (float level)
 {
-    const float db = juce::Decibels::gainToDecibels (std::max (level, 1.0e-5f), -72.0f);
-    return juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 63.0f);
+    return juce::jlimit (-60.0f, 3.0f, juce::Decibels::gainToDecibels (std::max (level, 1.0e-5f), -60.0f));
+}
+
+float StereoMeter::dbToNormalised (float db)
+{
+    return juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);
 }
 
 void StereoMeter::setLevels (float left, float right)
 {
-    const float targetL = levelToNormalised (left);
-    const float targetR = levelToNormalised (right);
+    const float targetL = gainToDb (left);
+    const float targetR = gainToDb (right);
 
-    displayLeft = targetL > displayLeft ? targetL : juce::jmax (targetL, displayLeft - 0.022f);
-    displayRight = targetR > displayRight ? targetR : juce::jmax (targetR, displayRight - 0.022f);
+    // Fast attack, slow ballistic release, matching a hardware peak meter.
+    displayLeftDb  = targetL > displayLeftDb  ? targetL  : juce::jmax (targetL,  displayLeftDb  - 1.4f);
+    displayRightDb = targetR > displayRightDb ? targetR : juce::jmax (targetR, displayRightDb - 1.4f);
 
-    if (displayLeft >= peakLeft || displayRight >= peakRight)
+    const float samplePeak = juce::jmax (displayLeftDb, displayRightDb);
+
+    if (samplePeak >= peakHoldDb)
     {
-        peakLeft = std::max (peakLeft, displayLeft);
-        peakRight = std::max (peakRight, displayRight);
+        peakHoldDb = samplePeak;
         peakHoldTicks = 32;
     }
     else if (--peakHoldTicks <= 0)
     {
-        peakLeft = juce::jmax (displayLeft, peakLeft - 0.008f);
-        peakRight = juce::jmax (displayRight, peakRight - 0.008f);
+        peakHoldDb = juce::jmax (samplePeak, peakHoldDb - 0.5f);
     }
 
     if (left > 1.0f || right > 1.0f)
@@ -544,84 +549,106 @@ void StereoMeter::mouseDown (const juce::MouseEvent&)
     repaint();
 }
 
-void StereoMeter::paintBar (juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peak) const
+void StereoMeter::paintBar (juce::Graphics& g, juce::Rectangle<float> track,
+                            float levelDb, float peakDb) const
 {
     g.setColour (obsidianWell);
-    g.fillRoundedRectangle (bounds.expanded (0.5f), 2.5f);
+    g.fillRoundedRectangle (track, 2.0f);
 
-    if (level > 0.002f)
+    const float fillW = dbToNormalised (levelDb) * track.getWidth();
+
+    if (fillW > 0.5f)
     {
-        auto fill = bounds.withWidth (juce::jmax (3.0f, bounds.getWidth() * level));
-        juce::ColourGradient grad (crimsonGlow, bounds.getX(), bounds.getY(),
-                                   crimsonBright, bounds.getRight(), bounds.getY(), false);
-        grad.addColour (0.68, crimsonAccent);
-        g.setGradientFill (grad);
-        g.fillRoundedRectangle (fill, 2.0f);
+        const auto fill = track.withWidth (fillW);
 
-        g.setColour (crimsonGlow.withAlpha (0.24f));
-        g.drawRoundedRectangle (fill.expanded (0.8f), 2.6f, 1.2f);
+        // Soft crimson outer bloom.
+        g.setColour (crimsonGlow.withAlpha (0.32f));
+        g.fillRoundedRectangle (fill.expanded (0.5f, 1.2f), 2.0f);
+
+        // Muted crimson on the left, hot crimson near 0 dB on the right.
+        juce::ColourGradient barGradient (crimsonAccent, track.getX(), fill.getCentreY(),
+                                          crimsonBright, track.getRight(), fill.getCentreY(), false);
+        g.setGradientFill (barGradient);
+        g.fillRoundedRectangle (fill, 1.5f);
+
+        g.setColour (crimsonBright);
+        g.fillRect (fill.getRight() - 1.5f, fill.getY(), 1.5f, fill.getHeight());
     }
 
-    const float peakX = bounds.getX() + bounds.getWidth() * peak;
-
-    if (peak > 0.01f)
+    // Ballistic peak-hold hairline.
+    if (peakDb > -59.0f)
     {
-        g.setColour (crimsonGlow.withAlpha (0.35f));
-        g.fillRect (peakX - 1.5f, bounds.getY() - 1.0f, 3.0f, bounds.getHeight() + 2.0f);
-        g.setColour (textPrimary.withAlpha (0.80f));
-        g.fillRect (peakX - 0.6f, bounds.getY() - 1.0f, 1.2f, bounds.getHeight() + 2.0f);
-    }
-
-    g.setColour (juce::Colours::black.withAlpha (0.38f));
-    for (int tick = 1; tick < 10; ++tick)
-    {
-        const float x = bounds.getX() + bounds.getWidth() * static_cast<float> (tick) / 10.0f;
-        g.drawVerticalLine (juce::roundToInt (x), bounds.getY(), bounds.getBottom());
+        const float peakX = track.getX() + dbToNormalised (peakDb) * track.getWidth();
+        g.setColour (crimsonBright.withAlpha (0.85f));
+        g.fillRect (peakX - 0.6f, track.getY() - 1.0f, 1.2f, track.getHeight() + 2.0f);
     }
 }
 
 void StereoMeter::paint (juce::Graphics& g)
 {
-    auto area = getLocalBounds().toFloat();
+    const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
 
-    g.setFont (font (7.2f, FontWeight::semibold, 0.15f));
+    // Recessed obsidian glass well.
+    g.setColour (obsidianScreen);
+    g.fillRoundedRectangle (bounds, 5.0f);
+    g.setColour (glassRimHighlight.withAlpha (0.18f));
+    g.drawRoundedRectangle (bounds, 5.0f, 0.8f);
+    g.setColour (crimsonAccent.withAlpha (0.28f));
+    g.drawRoundedRectangle (bounds.reduced (1.0f), 4.2f, 0.6f);
+
+    auto inner = bounds.reduced (8.0f, 5.0f);
+    auto headerRow = inner.removeFromTop (14.0f);
+
     g.setColour (textSecondary);
-    g.drawText ("OUTPUT LEVEL", area.removeFromTop (11.0f).removeFromLeft (120.0f),
-                juce::Justification::centredLeft, false);
+    g.setFont (font (8.0f, FontWeight::semibold, 0.10f));
+    g.drawText ("OUT METER", headerRow, juce::Justification::centredLeft, false);
 
     const bool clipping = clipTicks > 0;
-    g.setFont (font (7.0f, FontWeight::semibold, 0.10f));
-    g.setColour (clipping ? crimsonBright : textMuted);
-    g.drawText ("CLIP", getLocalBounds().toFloat().removeFromTop (11.0f),
-                juce::Justification::centredRight, false);
+    g.setColour (clipping ? crimsonBright
+                          : (peakHoldDb > -0.5f ? crimsonBright : textPrimary));
+    g.setFont (font (8.5f, FontWeight::semibold, 0.04f));
+    g.drawText (peakHoldDb <= -59.5f ? juce::String ("-INF dB")
+                                     : juce::String (peakHoldDb, 1) + " dB",
+                headerRow, juce::Justification::centredRight, false);
 
-    auto barArea = getLocalBounds().toFloat().withTrimmedTop (15.0f);
-    auto leftBar = barArea.removeFromTop (9.0f);
-    barArea.removeFromTop (5.0f);
-    auto rightBar = barArea.removeFromTop (9.0f);
+    inner.removeFromTop (3.0f);
+    const auto scaleRow = inner.removeFromBottom (11.0f);
 
-    g.setFont (font (7.2f, FontWeight::semibold, 0.02f));
+    // Horizontal stereo L / R tracks: -60 dB on the left, 0 dB on the right.
+    constexpr float labelW = 11.0f;
+    const float barLeft = inner.getX() + labelW;
+    const float barRight = inner.getRight() - 2.0f;
+    const float barW = juce::jmax (20.0f, barRight - barLeft);
+    constexpr float barH = 6.5f;
+    const float midY = inner.getCentreY();
+
+    const juce::Rectangle<float> leftTrack (barLeft, midY - barH - 1.5f, barW, barH);
+    const juce::Rectangle<float> rightTrack (barLeft, midY + 1.5f, barW, barH);
+
     g.setColour (textMuted);
-    g.drawText ("L", leftBar.removeFromLeft (13.0f), juce::Justification::centredLeft, false);
-    g.drawText ("R", rightBar.removeFromLeft (13.0f), juce::Justification::centredLeft, false);
+    g.setFont (font (7.5f, FontWeight::semibold));
+    g.drawText ("L", juce::Rectangle<float> (inner.getX(), leftTrack.getY() - 1.0f,
+                                             labelW - 2.0f, barH + 2.0f),
+                juce::Justification::centredLeft, false);
+    g.drawText ("R", juce::Rectangle<float> (inner.getX(), rightTrack.getY() - 1.0f,
+                                             labelW - 2.0f, barH + 2.0f),
+                juce::Justification::centredLeft, false);
 
-    paintBar (g, leftBar, displayLeft, peakLeft);
-    paintBar (g, rightBar, displayRight, peakRight);
+    paintBar (g, leftTrack, displayLeftDb, peakHoldDb);
+    paintBar (g, rightTrack, displayRightDb, peakHoldDb);
 
-    g.setFont (font (6.4f, FontWeight::regular, 0.02f));
-    g.setColour (textMuted);
-    const float barX = getLocalBounds().toFloat().getX() + 13.0f;
-    const float barW = getLocalBounds().toFloat().getWidth() - 13.0f;
-    const float labelY = static_cast<float> (getHeight()) - 9.0f;
-    const std::pair<float, const char*> labels[] { { 0.0f, "-60" }, { 0.43f, "-24" },
-                                                   { 0.76f, "-6" }, { 1.0f, "0" } };
+    // Minimalist dB scale along the bottom of the bars.
+    constexpr float tickDbs[] { -48.0f, -36.0f, -24.0f, -12.0f, -6.0f, 0.0f };
+    g.setFont (font (7.0f, FontWeight::regular));
 
-    for (const auto& label : labels)
+    for (float db : tickDbs)
     {
-        const float x = barX + barW * label.first;
-        const float labelX = juce::jlimit (0.0f, static_cast<float> (getWidth()) - 18.0f, x - 9.0f);
-        g.drawText (label.second,
-                    juce::Rectangle<float> (labelX, labelY, 18.0f, 8.0f),
+        const float x = barLeft + dbToNormalised (db) * barW;
+        g.setColour (obsidianGrid.brighter (0.15f));
+        g.fillRect (x - 0.5f, rightTrack.getBottom() + 1.0f, 1.0f, 2.5f);
+        g.setColour (textMuted);
+        g.drawText (juce::String (juce::roundToInt (db)),
+                    juce::Rectangle<float> (x - 10.0f, scaleRow.getY(), 20.0f, scaleRow.getHeight()),
                     juce::Justification::centred, false);
     }
 }

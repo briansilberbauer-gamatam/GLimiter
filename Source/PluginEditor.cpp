@@ -80,9 +80,9 @@ public:
         addAndMakeVisible (*limiterPanel);
 
         shapePanel = std::make_unique<EffectPanel> (apvts, "02", "GUITAR SHAPE",
-                                                    "BODY / AIR / BITE / PARALLEL MIX",
+                                                    "BODY / AIR / BITE / PICK DYNAMICS",
                                                     crimsonAccent, glimiter::params::shapeOn,
-                                                    2, "SHAPE");
+                                                    3, "SHAPE");
         addAndMakeVisible (*shapePanel);
 
         limiterPanel->addKnob ("THRESHOLD", glimiter::params::threshold, formatDb);
@@ -95,7 +95,6 @@ public:
         shapePanel->addKnob ("BODY", glimiter::params::body, formatDb);
         shapePanel->addKnob ("AIR", glimiter::params::air, formatDb);
         shapePanel->addKnob ("BITE", glimiter::params::bite, formatPercent);
-        shapePanel->addKnob ("MIX", glimiter::params::mix, formatPercent);
 
         gainReductionMeter = new GainReductionMeter();
         limiterPanel->setBottomComponent (std::unique_ptr<GainReductionMeter> (gainReductionMeter), 34);
@@ -108,6 +107,10 @@ public:
         inputSlider = std::make_unique<ParamSlider> (apvts, glimiter::params::inputGain,
                                                      "INPUT", formatDb);
         addAndMakeVisible (*inputSlider);
+
+        mixSlider = std::make_unique<ParamSlider> (apvts, glimiter::params::mix,
+                                                   "MIX", formatPercent);
+        addAndMakeVisible (*mixSlider);
 
         outputSlider = std::make_unique<ParamSlider> (apvts, glimiter::params::outputGain,
                                                       "OUTPUT", formatDb);
@@ -135,6 +138,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         drawDesktopHardwareChassis (g, getLocalBounds().toFloat());
+        drawRightSideMixerBay (g);
 
         paintHeader (g);
         paintFooter (g);
@@ -142,20 +146,78 @@ public:
 
     void resized() override
     {
-        presetPill->setBounds (375, 30, 430, 44);
+        // Match drawDesktopHardwareChassis() exactly: unit -> metal base -> glass -> interior.
+        auto unitBounds  = getLocalBounds().reduced (18, 16);
+        auto metalBase   = unitBounds.reduced (5);
+        auto glassPanel  = metalBase.reduced (6);
+        auto innerGlass  = glassPanel.reduced (18, 16);
 
-        waveform->setBounds (30, 86, 1118, 136);
+        // 1. Carve the right-side Mixer Bay off FIRST so it spans the full interior height.
+        constexpr int mixerBayWidth = 204;
+        auto rightMixerBay = innerGlass.removeFromRight (mixerBayWidth);
+        mixerBayBounds = rightMixerBay.toFloat();
+        innerGlass.removeFromRight (14); // Divider hairline + gap clearance.
 
-        limiterPanel->setBounds (30, 236, 700, 352);
-        shapePanel->setBounds (746, 236, 402, 352);
+        // 1a. Horizontal Output Meter, vertically BELOW the three mixer sliders.
+        auto outputMeterArea = rightMixerBay.removeFromBottom (72);
+        outputMeter.setBounds (outputMeterArea.reduced (6, 4));
+        rightMixerBay.removeFromBottom (8);
 
-        inputSlider->setBounds (44, 606, 58, 80);
-        outputSlider->setBounds (108, 606, 58, 80);
-        outputMeter.setBounds (196, 612, 320, 66);
-        bypassSwitch->setBounds (982, 630, 138, 30);
+        // 1b. Input / Wet-Dry Mix / Output vertical columns across the upper mixer bay.
+        ParamSlider* mixers[3] { inputSlider.get(), mixSlider.get(), outputSlider.get() };
+        const int colWidth = rightMixerBay.getWidth() / 3;
+
+        for (int i = 0; i < 3; ++i)
+        {
+            auto column = rightMixerBay.removeFromLeft (i == 2 ? rightMixerBay.getWidth() : colWidth)
+                                       .reduced (4, 0);
+            mixers[i]->setBounds (column);
+        }
+
+        // 2. Main workspace: pill header, central waveform, module panels, tactile footer row.
+        const int left   = innerGlass.getX();
+        const int right  = innerGlass.getRight();
+        const int width  = innerGlass.getWidth();
+
+        presetPill->setBounds (390, 30, 380, 42);
+        waveform->setBounds (left, 84, width, 156);
+
+        constexpr int panelTop = 252;
+        constexpr int panelHeight = 372;
+        constexpr int panelGap = 16;
+        const int limiterWidth = 528;
+
+        limiterPanel->setBounds (left, panelTop, limiterWidth, panelHeight);
+        shapePanel->setBounds (left + limiterWidth + panelGap, panelTop,
+                               right - (left + limiterWidth + panelGap), panelHeight);
+
+        bypassSwitch->setBounds (right - 122, 638, 122, 30);
     }
 
 private:
+    void drawRightSideMixerBay (juce::Graphics& g) const
+    {
+        if (mixerBayBounds.isEmpty())
+            return;
+
+        // Smoked glass recess spanning the full interior height on the right.
+        g.setColour (obsidianScreen.withAlpha (0.28f));
+        g.fillRoundedRectangle (mixerBayBounds, 6.0f);
+
+        // Full-height divider hairline with a subtle crimson edge refraction.
+        const float divX = mixerBayBounds.getX() - 7.0f;
+        g.setColour (obsidianGrid);
+        g.fillRect (divX, mixerBayBounds.getY() + 4.0f, 1.0f, mixerBayBounds.getHeight() - 8.0f);
+
+        juce::ColourGradient dividerGlow (juce::Colours::transparentBlack, divX, mixerBayBounds.getY(),
+                                          juce::Colours::transparentBlack, divX, mixerBayBounds.getBottom(),
+                                          false);
+        dividerGlow.addColour (0.5, crimsonAccent.withAlpha (0.32f));
+        g.setGradientFill (dividerGlow);
+        g.fillRect (divX + 1.0f, mixerBayBounds.getY() + 12.0f, 1.0f,
+                    mixerBayBounds.getHeight() - 24.0f);
+    }
+
     void paintHeader (juce::Graphics& g)
     {
         drawPickMark (g, { 40.0f, 27.0f, 42.0f, 49.0f });
@@ -167,54 +229,50 @@ private:
         g.setColour (textSecondary);
         g.setFont (font (7.0f, FontWeight::semibold, 0.17f));
         g.drawText ("GUITAR LIMITER  /  PICK-PRESERVING DYNAMICS",
-                    95, 57, 330, 10, juce::Justification::centredLeft, false);
+                    95, 57, 290, 10, juce::Justification::centredLeft, false);
 
         g.setColour (textSecondary.withAlpha (0.62f));
         g.setFont (font (6.2f, FontWeight::semibold, 0.16f));
         g.drawText ("THUMP-FILTERED DETECTOR  /  BODY + AIR + BITE",
-                    95, 68, 330, 9, juce::Justification::centredLeft, false);
+                    95, 68, 290, 9, juce::Justification::centredLeft, false);
 
         g.setColour (textPrimary.withAlpha (0.90f));
         g.setFont (font (7.2f, FontWeight::black, 0.18f));
-        g.drawText ("BLS AUDIO", 930, 36, 176, 10,
+        g.drawText ("BLS AUDIO", 790, 36, 126, 10,
                     juce::Justification::centredRight, false);
 
         g.setColour (textMuted);
         g.setFont (font (6.2f, FontWeight::semibold, 0.14f));
         g.drawText ("64-BIT VST3  /  v" + juce::String (glimiter::version),
-                    930, 49, 176, 9, juce::Justification::centredRight, false);
+                    790, 49, 126, 9, juce::Justification::centredRight, false);
         g.setColour (textSecondary.withAlpha (0.58f));
-        g.drawText ("SERIES GL-1  /  GUITAR DYNAMICS", 930, 62, 176, 9,
+        g.drawText ("SERIES GL-1  /  GUITAR DYNAMICS", 790, 62, 126, 9,
                     juce::Justification::centredRight, false);
     }
 
     void paintFooter (juce::Graphics& g)
     {
-        const auto footer = juce::Rectangle<float> (30.0f, 600.0f, 1118.0f, 88.0f);
+        const auto strip = juce::Rectangle<float> (47.0f, 632.0f, 868.0f, 44.0f);
 
-        drawGlassWell (g, footer, 7.0f);
+        drawGlassWell (g, strip, 6.0f);
 
-        juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.025f), footer.getTopLeft(),
-                                    juce::Colours::transparentWhite, footer.getBottomLeft(), false);
+        juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.025f), strip.getTopLeft(),
+                                    juce::Colours::transparentWhite, strip.getBottomLeft(), false);
         g.setGradientFill (sheen);
-        g.fillRoundedRectangle (footer, 7.0f);
-
-        g.setColour (glassRimHighlight.withAlpha (0.14f));
-        g.fillRect (footer.getX() + 122.0f, footer.getY() + 11.0f, 1.0f, footer.getHeight() - 22.0f);
-        g.fillRect (footer.getX() + 500.0f, footer.getY() + 11.0f, 1.0f, footer.getHeight() - 22.0f);
+        g.fillRoundedRectangle (strip, 6.0f);
 
         g.setColour (textMuted);
         g.setFont (font (6.4f, FontWeight::semibold, 0.17f));
-        g.drawText ("GUITAR SIGNAL PATH", 548, 608, 260, 10,
+        g.drawText ("SIGNAL PATH", 58, 641, 80, 10,
                     juce::Justification::centredLeft, false);
 
         const std::array<const char*, 5> stages { "INPUT", "SHAPE", "LIMIT", "CEIL", "OUT" };
 
-        float chipX = 548.0f;
+        float chipX = 142.0f;
 
         for (size_t i = 0; i < stages.size(); ++i)
         {
-            const auto chip = juce::Rectangle<float> (chipX, 624.0f, 66.0f, 19.0f);
+            const auto chip = juce::Rectangle<float> (chipX, 643.0f, 64.0f, 21.0f);
             drawSignalChip (g, chip, stages[i]);
 
             if (i + 1 < stages.size())
@@ -222,28 +280,27 @@ private:
                 g.setColour (crimsonAccent.withAlpha (0.72f));
                 g.setFont (font (8.0f, FontWeight::black));
                 g.drawText (">", juce::Rectangle<float> (chip.getRight(), chip.getY(),
-                                                         10.0f, chip.getHeight()),
+                                                         9.0f, chip.getHeight()),
                             juce::Justification::centred, false);
             }
 
-            chipX += 76.0f;
+            chipX += 73.0f;
         }
 
         g.setColour (textMuted);
         g.setFont (font (6.0f, FontWeight::semibold, 0.13f));
-        g.drawText ("THUMP FILTER 20-400 HZ  /  PROGRAMME-DEPENDENT RELEASE",
-                    548, 650, 390, 9, juce::Justification::centredLeft, false);
-        g.drawText ("FIXED 2.0 MS LOOKAHEAD  /  DELAY-COMPENSATED BYPASS",
-                    548, 663, 390, 9, juce::Justification::centredLeft, false);
+        g.drawText ("FIXED 2.0 MS LOOKAHEAD", 524, 641, 220, 9,
+                    juce::Justification::centredLeft, false);
+        g.drawText ("DELAY-COMPENSATED BYPASS", 524, 653, 220, 9,
+                    juce::Justification::centredLeft, false);
+
+        g.setColour (glassRimHighlight.withAlpha (0.14f));
+        g.fillRect (780.0f, 639.0f, 1.0f, 30.0f);
 
         g.setColour (textMuted);
-        g.setFont (font (6.4f, FontWeight::semibold, 0.16f));
-        g.drawText ("MASTER", 982, 608, 138, 10, juce::Justification::centredLeft, false);
-
-        g.setColour (textMuted.withAlpha (0.72f));
-        g.setFont (font (5.8f, FontWeight::regular, 0.10f));
-        g.drawText ("RAW INPUT / LATENCY ALIGNED", 982, 664, 138, 9,
-                    juce::Justification::centredLeft, false);
+        g.setFont (font (6.0f, FontWeight::semibold, 0.14f));
+        g.drawText ("MASTER", 690, 641, 78, 10,
+                    juce::Justification::centredRight, false);
     }
 
     void timerCallback() override
@@ -264,8 +321,10 @@ private:
     std::unique_ptr<EffectPanel> shapePanel;
 
     std::unique_ptr<ParamSlider> inputSlider;
+    std::unique_ptr<ParamSlider> mixSlider;
     std::unique_ptr<ParamSlider> outputSlider;
     StereoMeter outputMeter;
+    juce::Rectangle<float> mixerBayBounds;
 
     std::unique_ptr<PowerSwitch> bypassSwitch;
     std::unique_ptr<WaveformDisplay> waveform;

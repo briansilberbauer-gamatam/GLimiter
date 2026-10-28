@@ -160,13 +160,13 @@ public:
     void paint (juce::Graphics&) override;
 
 private:
-    static float levelToNormalised (float level);
-    void paintBar (juce::Graphics&, juce::Rectangle<float> bounds, float level, float peak) const;
+    static float gainToDb (float level);
+    static float dbToNormalised (float db);
+    void paintBar (juce::Graphics&, juce::Rectangle<float> track, float levelDb, float peakDb) const;
 
-    float displayLeft = 0.0f;
-    float displayRight = 0.0f;
-    float peakLeft = 0.0f;
-    float peakRight = 0.0f;
+    float displayLeftDb = -60.0f;
+    float displayRightDb = -60.0f;
+    float peakHoldDb = -60.0f;
     int peakHoldTicks = 0;
     int clipTicks = 0;
 

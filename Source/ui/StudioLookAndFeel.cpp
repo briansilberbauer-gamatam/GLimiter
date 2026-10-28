@@ -185,8 +185,8 @@ void StudioLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w
     const float trackH   = juce::jmax (10.0f, trackBot - trackTop);
     const float thumbY   = juce::jlimit (trackTop, trackBot, sliderPos);
 
-    // 1. Minimalist tick marks arrayed along both sides of the recessed track.
-    constexpr int numTicks = 11;
+    // 1. Minimalist tick marks arrayed along both sides of the full-height track.
+    constexpr int numTicks = 21;
 
     for (int i = 0; i < numTicks; ++i)
     {
@@ -221,7 +221,7 @@ void StudioLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w
     }
 
     // 4. Ultra-thin flush machined touch bar.
-    const juce::Rectangle<float> thumb (centreX - 11.0f, thumbY - 4.5f, 22.0f, 9.0f);
+    const juce::Rectangle<float> thumb (centreX - 12.0f, thumbY - 4.5f, 24.0f, 9.0f);
     g.setColour (dropShadowDeep.withAlpha (0.60f));
     g.fillRoundedRectangle (thumb.translated (0.8f, 1.4f), 2.0f);
 

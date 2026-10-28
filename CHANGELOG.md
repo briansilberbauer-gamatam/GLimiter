@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 — Updated look & feel
+
+### UI
+
+- Moved Input, Wet/Dry Mix and Output onto ultra-thin vertical glass faders in a
+  full-height right-side Mixer Bay, with the stereo OUT METER directly below the
+  mixers.
+- Trimmed the footer to a slim signal-path strip and moved the MIX control out of
+  the Guitar Shape panel to avoid duplicate controls.
+
 ## 1.0.0 — Guitar Limiter
 
 Initial release.

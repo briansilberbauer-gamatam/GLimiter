@@ -53,12 +53,15 @@ INPUT → BODY → AIR → BITE → THUMP-FILTERED DETECTOR → 2 ms LOOKAHEAD L
 | BODY | ±12 dB | 0 dB | Low shelf at 180 Hz. |
 | AIR | ±12 dB | 0 dB | High shelf at 3.2 kHz. |
 | BITE | 0 … 100% | 15% | Symmetric soft saturation that adds harmonics and shaves peaks. |
-| MIX | 0 … 100% | 100% | Parallel blend of limited and shaped dry signal. |
 | SHAPE | on / off | on | Bypasses BODY/AIR/BITE while leaving the limiter active. |
 
 ### Global
 
+- **Mixer bay (right side)**: Input (±24 dB), Wet/Dry Mix (0–100%) and Output
+  (±24 dB) vertical glass faders, with a horizontal stereo OUT METER directly
+  below them.
 - **Input / Output**: ±24 dB, with 20 ms smoothing.
+- **Mix**: parallel blend of limited and shaped dry signal.
 - **Bypass**: routes the raw input through the matching 2 ms delay.
 - **Preset pill**: eight factory programmes, `<` / `>` navigation, and an EDITED
   indicator when a parameter changes.
